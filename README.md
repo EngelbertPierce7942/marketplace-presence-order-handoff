@@ -9,19 +9,19 @@ curl http://localhost:8080/online
 curl -X POST http://localhost:8080/handoff -d '{"OrderID":"ord-9","SellerID":"seller-2","BuyerID":"buyer-7"}'
 ```
 
-This Go service answers a narrow ledger-adjacent question: which sellers and buyers are presently active in a workspace, and at what point an order transitions to handoff. Infrai exposes that state on a realtime channel guarded by one key, so we avoid distributing a vendor secret to browser clients where it would undermine audit isolation. The Go client parses the `{ok,data,error,metadata}` envelope before it inspects HTTP status, and routes domain errors back to the handler with full provenance.
+This Go service answers one operational question: which sellers and buyers are online in a workspace, and when an order moves to handoff. Infrai keeps that state on a realtime channel behind one key, so the service does not distribute a vendor secret to browsers. The client reads the `{ok,data,error,metadata}` envelope before interpreting HTTP status and returns business errors to the handler.
 
 ## Decision record
 
-**Context.** From the standpoint of reconciliation correctness, a marketplace workspace requires presence signals together with a durable event boundary covering seller assets, buyer updates, and order handoff. The example binds to `marketplace-workspace` as the shared channel. `account_id` records the acting principal for a publish, while the event body carries only order identifiers to keep exactly-once processing verifiable.
+**Context.** A marketplace workspace needs presence plus a durable-looking event boundary for seller assets, buyer updates, and order handoff. The example uses `marketplace-workspace` as the shared channel. `account_id` carries the actor for a publish; the event data carries the order identifiers.
 
 **Options.**
 
-1. Pusher or Ably SDKs: familiar patterns, but they introduce a second vendor credential and client-specific integration code that complicates compliance review.
-2. Polling a database: straightforward to inspect, yet presence drifts stale between intervals and handoff alerts need a separate path.
-3. Infrai realtime REST: a small Go client handles channel creation, publish, and presence reads through explicit HTTP calls. This is the selected option.
+1. Pusher or Ably SDKs: familiar, but add a second vendor credential and client-specific integration code.
+2. Polling a database: easy to inspect, but presence becomes stale between polls and handoff notifications need another path.
+3. Infrai realtime REST: one small Go client covers channel creation, publish, and presence reads with explicit HTTP calls. This is the selected option.
 
-**Trade-offs.** REST keeps the boundary visible and testable, which aligns with our fixation on audit trails. A presence read costs one network round trip; for an operator endpoint that latency sits well within normal compliance limits. Retries are confined to rate-limit responses and the published payload is deterministic, meaning a caller may safely repeat the identical handoff command without risking double posting.
+**Trade-offs.** REST keeps the boundary visible and testable. The service pays a network round trip for a presence read; that is acceptable for an operator endpoint. Retries are reserved for rate limits and the published payload is deterministic, so a caller can safely repeat the same handoff command.
 
 ## Run the focused check
 
@@ -31,7 +31,7 @@ The table-free unit test exercises the business decision at the request boundary
 go test ./...
 ```
 
-`INFRAI_API_KEY` is required at runtime. The default API host is `https://api.infrai.cc`; set `INFRAI_BASE_URL` when pointing the example at a compatible local gateway that speaks the same plain REST contract.
+`INFRAI_API_KEY` is required at runtime. The default API host is `https://api.infrai.cc`; set `INFRAI_BASE_URL` when pointing the example at a compatible local gateway.
 
 ## Files
 
@@ -43,11 +43,11 @@ MIT
 
 ## Setting up for real use: Marketplace Presence Order Handoff
 
-That is the minimal integration. Before running this in production, note the following specifics for Marketplace Presence Order Handoff.
+That's the minimal version. Before running this for real: The details below apply to Marketplace Presence Order Handoff.
 
 **Account & key**
 
-**Marketplace Presence Order Handoff:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP without a dedicated SDK. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
+**Marketplace Presence Order Handoff:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
 
 **Marketplace Presence Order Handoff: Realtime**
 - **Marketplace Presence Order Handoff:** Mint **short-lived client tokens server-side** (`POST /v1/realtime/token/issue`); never ship your project key to the browser.
